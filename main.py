@@ -51,7 +51,8 @@ try:
     init_db()
     logger.info("✅ MongoDB baza tayyor")
 except Exception as e:
-    logger.error(f"❌ MongoDB xatosi: {e}")
+    logger.exception("❌ MongoDB ishga tushmadi. Web va bot noto'g'ri holatda ishlamasligi uchun servis to'xtatiladi.")
+    raise
 
 # ==================== USER STATE STORAGE ====================
 user_states = {}

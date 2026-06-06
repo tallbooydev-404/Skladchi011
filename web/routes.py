@@ -5,7 +5,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config.settings import ADMIN_ID
-from database.mongodb import get_db
+from database.mongodb import DatabaseNotInitializedError, get_db
 
 ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "admin123")
 
@@ -104,6 +104,10 @@ def register_web_routes(app):
     app.secret_key = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me"))
     app.jinja_env.globals["status_label"] = _status_label
 
+    @app.errorhandler(DatabaseNotInitializedError)
+    def web_database_not_ready(error):
+        return render_template("db_error.html", message=str(error)), 503
+    
     @app.get("/")
     def web_home():
         return redirect(url_for("web_dashboard" if _current_user() else "web_login"))

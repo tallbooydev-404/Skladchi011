@@ -10,6 +10,9 @@ from config.settings import DB_NAME, MONGO_URI, WAREHOUSE_NAME
 
 logger = logging.getLogger(__name__)
 
+class DatabaseNotInitializedError(RuntimeError):
+    """MongoDB manager ishga tushmaganida qaytariladigan aniq xato."""
+
 class MongoDBManager:
     """MongoDB bilan ishlash uchun asosiy klass"""
     
@@ -62,7 +65,7 @@ class MongoDBManager:
         self.db["customers"].create_index([("phone", 1)], sparse=True)
         self.db["raw_materials"].create_index([("name", 1), ("warehouse", 1), ("branch", 1), ("category", 1)], unique=True)
         self.db["raw_materials"].create_index("legacy_product_id", unique=True, sparse=True)
-        self.db["finished_products"].create_index([("article", 1)], unique=True, sparse=True)
+        self._ensure_finished_products_article_index()
         self.db["finished_products"].create_index([("name", 1), ("color", 1), ("size", 1)], unique=True)
         self.db["product_boms"].create_index([("product_id", 1), ("material_id", 1)], unique=True)
         self.db["stock_balances"].create_index([("material_id", 1), ("warehouse", 1)], unique=True)
@@ -98,6 +101,34 @@ class MongoDBManager:
             unique=True,
         )
         self._migrate_legacy_products_to_raw_materials()
+
+    def _ensure_finished_products_article_index(self):
+        """Tayyor mahsulot artikuli uchun null/bo'sh qiymatlarga chidamli unique index."""
+        collection = self.db["finished_products"]
+
+        # Eski yozuvlarda article=None yoki article="" bo'lsa sparse unique index baribir
+        # DuplicateKeyError berishi mumkin. Bunday qiymatlar unique indexga kirmasligi
+        # uchun fieldni butunlay olib tashlaymiz.
+        collection.update_many(
+            {"$or": [{"article": None}, {"article": ""}]},
+            {"$unset": {"article": ""}},
+        )
+
+        for index_name, index_data in collection.index_information().items():
+            if index_name == "_id_":
+                continue
+            if index_data.get("key") != [("article", 1)]:
+                continue
+            if index_data.get("partialFilterExpression") == {"article": {"$type": "string", "$gt": ""}}:
+                continue
+            collection.drop_index(index_name)
+
+        collection.create_index(
+            [("article", 1)],
+            unique=True,
+            name="uniq_finished_products_article_non_empty",
+            partialFilterExpression={"article": {"$type": "string", "$gt": ""}},
+        )    
 
     def _migrate_legacy_products_to_raw_materials(self):
         """Eski products/inventory yozuvlarini yangi xomashyo modeliga ko'chiradi."""
@@ -1148,4 +1179,8 @@ def init_db():
     return _db_manager
 
 def get_db():
+    if _db_manager is None:
+       raise DatabaseNotInitializedError(
+           "MongoDB ishga tushmagan. Render envda MONGO_URI to'g'ri berilganini va MongoDB ulanishini tekshiring."
+       )
     return _db_manager
