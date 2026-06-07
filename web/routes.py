@@ -1,11 +1,15 @@
 from datetime import datetime
 import os
+import json
+import logging
 
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import flash, redirect, render_template, request, session, url_for, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config.settings import ADMIN_ID
 from database.mongodb import get_db
+
+logger = logging.getLogger(__name__)
 
 ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "admin123")
 
@@ -85,11 +89,15 @@ def _optional_int(value):
 
 
 def _format_quantity(value):
-    """Miqdorlarni Jinja shablonlarida ixcham ko'rsatish uchun filter."""
+    """Miqdorlarni Jinja shablonlarida ixcham ko'rsatish uchun filter - butun sonlarda int format."""
     if value is None:
         value = 0
     try:
-        return format(float(value), "g")
+        float_val = float(value)
+        # Agar butun son bo'lsa, int sifatida chiqarish
+        if float_val == int(float_val):
+            return str(int(float_val))
+        return format(float_val, "g")
     except (TypeError, ValueError):
         return value
 
@@ -295,34 +303,88 @@ def register_web_routes(app):
             return response
         db = get_db()
         ctx = _base_context(user)
-        product = db.get_finished_product(request.form.get("product_id"))
-        quantity = _to_float(request.form.get("quantity"), 1)
-        if not product or quantity <= 0:
-            flash("Tayyor mahsulot va miqdorni to'g'ri tanlang.", "error")
+        
+        # Get items from form (multiple products support)
+        items = []
+        items_raw = request.form.getlist("items")
+        
+        if items_raw:
+            # Multi-product form submission
+            for item_json in items_raw:
+                try:
+                    item_data = json.loads(item_json)
+                    product = db.get_finished_product(item_data.get("product_id"))
+                    if not product:
+                        continue
+                    
+                    qty = _to_float(item_data.get("quantity"), 1)
+                    # Convert quantity to integer if it's a whole number
+                    if qty == int(qty):
+                        qty = int(qty)
+                    
+                    unit_price = _to_float(item_data.get("price"), float(product.get("sale_price") or 0))
+                    items.append({
+                        "product_id": str(product["_id"]),
+                        "product_name": product.get("name"),
+                        "article": product.get("article"),
+                        "color": product.get("color"),
+                        "size": product.get("size"),
+                        "quantity": qty,
+                        "unit_price": unit_price,
+                        "total": qty * unit_price,
+                    })
+                except Exception as e:
+                    logger.warning(f"Item parsing error: {e}")
+                    continue
+        else:
+            # Single product form (legacy)
+            product = db.get_finished_product(request.form.get("product_id"))
+            quantity = _to_float(request.form.get("quantity"), 1)
+            
+            # Convert to integer if whole number
+            if quantity == int(quantity):
+                quantity = int(quantity)
+            
+            if not product or quantity <= 0:
+                flash("Tayyor mahsulot va miqdorni to'g'ri tanlang.", "error")
+                return redirect(url_for("web_orders"))
+            
+            unit_price = _to_float(request.form.get("unit_price"), float(product.get("sale_price") or 0))
+            items = [{
+                "product_id": str(product["_id"]),
+                "product_name": product.get("name"),
+                "article": product.get("article"),
+                "color": product.get("color"),
+                "size": product.get("size"),
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "total": quantity * unit_price,
+            }]
+        
+        if not items:
+            flash("Buyurtmaga mahsulot qo'shilmadi.", "error")
             return redirect(url_for("web_orders"))
-        unit_price = _to_float(request.form.get("unit_price"), float(product.get("sale_price") or 0))
-        item = {
-            "product_id": str(product["_id"]),
-            "product_name": product.get("name"),
-            "article": product.get("article"),
-            "color": product.get("color"),
-            "size": product.get("size"),
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "total": quantity * unit_price,
-        }
+        
+        # Determine customer
         if ctx["role"] == "customer":
             customer_id = user["user_id"]
             customer_name = _display_name(user)
             phone = user.get("phone")
             source = "telegram/web"
         else:
+            customer_id_form = request.form.get("customer_id", "").strip()
             customer_name = request.form.get("customer_name", "").strip() or "Noma'lum mijoz"
             phone = request.form.get("customer_phone", "").strip() or None
-            customer_id = phone or customer_name
+            customer_id = customer_id_form or phone or customer_name
             source = request.form.get("source") or "admin"
             db.upsert_customer(customer_name, phone=phone, telegram=request.form.get("telegram"), instagram=request.form.get("instagram"), source=source)
-        title = f"{item['product_name']} x {quantity:g}"
+        
+        # Create title from items
+        title_parts = [f"{item['product_name']} x {int(item['quantity']) if item['quantity'] == int(item['quantity']) else item['quantity']}" for item in items[:2]]
+        if len(items) > 2:
+            title_parts.append(f"+{len(items)-2} boshqa")
+        title = ", ".join(title_parts)
+        
         order_id = db.create_order(
             customer_id,
             customer_name,
@@ -330,7 +392,7 @@ def register_web_routes(app):
             request.form.get("description", "").strip(),
             request.form.get("warehouse") or ctx["selected_warehouse"],
             request.form.get("branch") or None,
-            [item],
+            items,
             source,
             phone,
         )
@@ -500,3 +562,170 @@ def register_web_routes(app):
         get_db().update_user_access(user_id, role=role, password_hash=password_hash, approved=approved)
         flash("Foydalanuvchi yangilandi.", "success")
         return redirect(url_for("web_management"))
+
+    # ============ API Endpoints ============
+    @app.get("/api/customers/search")
+    def api_search_customers():
+        """Mijozlarni qidirish uchun API endpointi"""
+        user, response = _login_required(["admin", "manager", "customer"])
+        if response:
+            return response
+        query = request.args.get("q", "").strip().lower()
+        limit = int(request.args.get("limit", 20))
+        if not query or len(query) < 1:
+            return jsonify([])
+        
+        db = get_db()
+        customers = db.get_customers(query, limit=limit)
+        result = []
+        for c in customers:
+            result.append({
+                "id": str(c.get("_id", "")),
+                "name": c.get("name", ""),
+                "phone": c.get("phone", ""),
+                "telegram": c.get("telegram", ""),
+                "instagram": c.get("instagram", ""),
+                "address": c.get("address", ""),
+            })
+        return jsonify(result)
+
+    @app.post("/api/orders/items")
+    def api_add_order_item():
+        """Buyurtmaga yangi mahsulot qo'shish (multi-item order uchun)"""
+        user, response = _login_required(["customer", "admin", "manager"])
+        if response:
+            return {"error": "Unauthorized"}, 401
+        
+        try:
+            data = request.get_json()
+            product_id = data.get("product_id")
+            quantity = _to_float(data.get("quantity", 1))
+            
+            if not product_id or quantity <= 0:
+                return {"error": "Mahsulot yoki miqdor noto'g'ri"}, 400
+            
+            db = get_db()
+            product = db.get_finished_product(product_id)
+            if not product:
+                return {"error": "Mahsulot topilmadi"}, 404
+            
+            unit_price = _to_float(data.get("unit_price"), float(product.get("sale_price") or 0))
+            item = {
+                "product_id": str(product["_id"]),
+                "product_name": product.get("name"),
+                "article": product.get("article"),
+                "color": product.get("color"),
+                "size": product.get("size"),
+                "quantity": int(quantity) if quantity == int(quantity) else quantity,
+                "unit_price": unit_price,
+                "total": quantity * unit_price,
+            }
+            return jsonify(item), 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.get("/api/products/finished")
+    def api_get_finished_products():
+        """Tayyor mahsulotlarni qidirish uchun API"""
+        user, response = _login_required(["admin", "manager", "customer"])
+        if response:
+            return response
+        
+        query = request.args.get("q", "").strip().lower()
+        limit = int(request.args.get("limit", 50))
+        
+        db = get_db()
+        products = db.get_finished_products(search=query, active=True)[:limit]
+        
+        result = []
+        for p in products:
+            result.append({
+                "id": str(p.get("_id", "")),
+                "name": p.get("name", ""),
+                "article": p.get("article", ""),
+                "color": p.get("color", ""),
+                "size": p.get("size", ""),
+                "sale_price": p.get("sale_price", 0),
+            })
+        return jsonify(result)
+
+    # ============ JOB CATEGORIES MANAGEMENT ============
+    @app.get("/job-categories")
+    def web_job_categories():
+        """Ishbay kategoriyalarini ko'rish"""
+        user, response = _login_required(["admin", "manager"])
+        if response:
+            return response
+        db = get_db()
+        categories = db.get_job_categories(active=None)
+        return render_template("job_categories.html", **_base_context(user), categories=categories)
+
+    @app.post("/job-categories")
+    def web_add_job_category():
+        """Ishbay kategoriyasi qo'shish"""
+        user, response = _login_required(["admin", "manager"])
+        if response:
+            return response
+        db = get_db()
+        category_id = db.add_job_category(
+            request.form.get("name", "").strip(),
+            request.form.get("description", "").strip() or None,
+            request.form.get("active") == "on"
+        )
+        flash("Kategoriya qo'shildi." if category_id else "Kategoriya mavjud yoki ma'lumot to'liq emas.", "success" if category_id else "error")
+        return redirect(url_for("web_job_categories"))
+
+    @app.post("/job-categories/<category_id>")
+    def web_update_job_category(category_id):
+        """Ishbay kategoriyasini tahrirlash"""
+        user, response = _login_required(["admin", "manager"])
+        if response:
+            return response
+        db = get_db()
+        db.update_job_category(
+            category_id,
+            request.form.get("name", "").strip() or None,
+            request.form.get("description", "").strip() or None,
+            request.form.get("active") == "on" if "active" in request.form else None
+        )
+        flash("Kategoriya yangilandi.", "success")
+        return redirect(url_for("web_job_categories"))
+
+    @app.post("/job-categories/<category_id>/delete")
+    def web_delete_job_category(category_id):
+        """Ishbay kategoriyasini o'chirish"""
+        user, response = _login_required(["admin"])
+        if response:
+            return response
+        db = get_db()
+        db.delete_job_category(category_id)
+        flash("Kategoriya o'chirildi.", "success")
+        return redirect(url_for("web_job_categories"))
+
+    # ============ EXCHANGE RATES MANAGEMENT ============
+    @app.get("/exchange-rates")
+    def web_exchange_rates():
+        """Valyuta kurslarini ko'rish va tahrirlash"""
+        user, response = _login_required(["admin", "manager"])
+        if response:
+            return response
+        return render_template("exchange_rates.html", **_base_context(user))
+
+    @app.post("/api/exchange-rates")
+    def api_set_exchange_rate():
+        """Valyuta kursini belgilash (API)"""
+        user, response = _login_required(["admin", "manager"])
+        if response:
+            return {"error": "Unauthorized"}, 401
+        
+        try:
+            data = request.get_json()
+            currency = data.get("currency", "USD_TO_UZS").upper()
+            rate = _to_float(data.get("rate"), 1.0)
+            date_str = data.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
+            
+            db = get_db()
+            db.set_exchange_rate(currency, rate, date_str)
+            return {"success": True, "currency": currency, "rate": rate}, 200
+        except Exception as e:
+            return {"error": str(e)}, 500

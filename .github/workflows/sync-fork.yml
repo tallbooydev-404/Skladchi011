@@ -1,0 +1,24 @@
+name: Har 6 soatda sinxronizatsiya qil
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: tallbooydev-404 ga yuborishni boshlash
+        run: |
+          git config user.name "Bot"
+          git config user.email "bot@github.com"
+          git remote add fork https://x-access-token:${{ secrets.FORK_SYNC_TOKEN }}@github.com/tallbooydev-404/Skladchinull.git
+          git push fork main --force

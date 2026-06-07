@@ -1,5 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .order-form { display: none; }
+  .order-form.active { display: grid; }
+  .toggle-btn { margin-bottom: 16px; }
+  .items-list { background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+  .item-row { display: grid; grid-template-columns: 1fr 80px 80px; gap: 8px; padding: 8px; background: #fff; border-radius: 4px; margin-bottom: 8px; align-items: center; border: 1px solid var(--line); }
+  .item-row button { padding: 5px 10px; font-size: 12px; min-height: 32px; }
+  .search-dropdown { position: relative; }
+  .search-results { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; z-index: 10; display: none; }
+  .search-results.active { display: block; }
+  .search-result-item { padding: 10px; cursor: pointer; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .search-result-item:hover { background: #f0f0f0; }
+  .summary { background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+  .summary b { display: block; font-size: 18px; }
+  @media (max-width: 768px) {
+    .grid.four { grid-template-columns: 1fr 1fr; }
+    .grid.three { grid-template-columns: 1fr 1fr; }
+    .item-row { grid-template-columns: 1fr; }
+  }
+</style>
+
 <header class="top">
   <div>
     <h1>Buyurtmalar</h1>
@@ -8,41 +29,220 @@
 </header>
 
 {% if role in ['customer','admin','manager'] %}
-<form class="panel stack order-form" method="post" action="{{ url_for('web_create_order') }}">
+<button class="toggle-btn" onclick="toggleOrderForm()">✚ Yangi buyurtma yaratish</button>
+
+<form class="panel stack order-form" id="orderForm" method="post" action="{{ url_for('web_create_order') }}">
   <h2>Yangi buyurtma</h2>
+  
   {% if role in ['admin','manager'] %}
-  <div class="grid three">
-    <input name="customer_name" placeholder="Xaridor nomi">
-    <input name="customer_phone" placeholder="Telefon">
-    <input name="source" placeholder="Manba: Telegram/Instagram">
+  <div>
+    <label><b>Xaridor</b></label>
+    <div class="search-dropdown">
+      <input id="customerSearch" placeholder="Xaridor nomini yoki telefonini kiriting..." autocomplete="off">
+      <div class="search-results" id="customerResults"></div>
+    </div>
+    <input id="customerId" type="hidden" name="customer_id">
+    <input id="customerName" type="hidden" name="customer_name">
+    <input id="customerPhone" type="hidden" name="customer_phone">
   </div>
   <div class="grid three">
-    <input name="telegram" placeholder="Telegram username">
-    <input name="instagram" placeholder="Instagram">
-    <input name="branch" placeholder="Filial/izoh">
+    <input id="telegramInput" placeholder="Telegram username" name="telegram">
+    <input id="instagramInput" placeholder="Instagram" name="instagram">
+    <input placeholder="Manba: Telegram/Instagram" name="source">
   </div>
-  {% endif %}
-  <div class="grid four">
+  <div class="grid two">
+    <input placeholder="Filial/izoh" name="branch">
     <select name="warehouse">
-      <option value="">Sklad</option>
+      <option value="">-- Sklad tanlang --</option>
       {% for wh in warehouses %}<option {{ 'selected' if wh.name == selected_warehouse }}>{{ wh.name }}</option>{% endfor %}
     </select>
-    <select name="product_id" required>
-      <option value="">Tayyor mahsulot</option>
-      {% for product in products %}
-      <option value="{{ product._id }}">{{ product.name }} {{ product.color or '' }} {{ product.size or '' }}</option>
-      {% endfor %}
-    </select>
-    <input name="quantity" type="number" min="0.01" step="0.01" value="1" placeholder="Miqdor">
-    <input name="unit_price" type="number" min="0" step="100" placeholder="Narx">
   </div>
+  {% else %}
+  <select name="warehouse">
+    <option value="">-- Sklad tanlang --</option>
+    {% for wh in warehouses %}<option {{ 'selected' if wh.name == selected_warehouse }}>{{ wh.name }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  
+  <div>
+    <label><b>Mahsulotlar</b></label>
+    <div class="grid two">
+      <div class="search-dropdown">
+        <input id="productSearch" placeholder="Mahsulot nomini qidirish..." autocomplete="off">
+        <div class="search-results" id="productResults"></div>
+      </div>
+      <div class="grid two" style="gap: 6px;">
+        <input id="productQty" type="number" min="1" value="1" placeholder="Miqdor">
+        <button type="button" onclick="addOrderItem()" style="margin-top: 0;">Qo'shish</button>
+      </div>
+    </div>
+    
+    <div class="items-list" id="itemsList">
+      <p style="color: var(--muted); margin: 0;">Mahsulot qo'shmadingiz</p>
+    </div>
+    
+    <div class="summary" id="orderSummary" style="display: none;">
+      <b id="totalItems">0 ta mahsulot</b>
+      <p style="margin: 8px 0 0; font-size: 14px;">Jami narx: <b id="totalPrice">0</b> UZS</p>
+    </div>
+  </div>
+  
   <textarea name="description" placeholder="Buyurtma izohi, o'lchamlar yoki yetkazish ma'lumoti"></textarea>
-  <button>Buyurtma yaratish</button>
+  <button type="submit">Buyurtma yaratish</button>
 </form>
+
+<script>
+  const orderItems = [];
+  let selectedCustomer = null;
+  let selectedProduct = null;
+
+  function toggleOrderForm() {
+    document.getElementById('orderForm').classList.toggle('active');
+  }
+
+  function addOrderItem() {
+    const qty = parseInt(document.getElementById('productQty').value) || 1;
+    if (!selectedProduct || qty < 1) {
+      alert('Mahsulot va miqdorni to\'g\'ri kiriting');
+      return;
+    }
+    
+    const item = {
+      id: Math.random().toString(36).substr(2, 9),
+      product_id: selectedProduct.id,
+      name: selectedProduct.name,
+      article: selectedProduct.article,
+      quantity: qty,
+      price: selectedProduct.sale_price
+    };
+    
+    orderItems.push(item);
+    renderItems();
+    document.getElementById('productSearch').value = '';
+    document.getElementById('productQty').value = '1';
+    selectedProduct = null;
+  }
+
+  function removeItem(itemId) {
+    const idx = orderItems.findIndex(i => i.id === itemId);
+    if (idx >= 0) orderItems.splice(idx, 1);
+    renderItems();
+  }
+
+  function renderItems() {
+    const list = document.getElementById('itemsList');
+    const summary = document.getElementById('orderSummary');
+    
+    if (orderItems.length === 0) {
+      list.innerHTML = '<p style="color: var(--muted); margin: 0;">Mahsulot qo\'shmadingiz</p>';
+      summary.style.display = 'none';
+      return;
+    }
+    
+    let html = '';
+    let total = 0;
+    orderItems.forEach(item => {
+      const itemTotal = item.quantity * item.price;
+      total += itemTotal;
+      html += `
+        <div class="item-row">
+          <div>
+            <b>${item.name}</b> ${item.article ? `(${item.article})` : ''}<br>
+            <small style="color: var(--muted);">${item.quantity} x ${item.price.toLocaleString()} = ${itemTotal.toLocaleString()} UZS</small>
+          </div>
+          <input type="hidden" name="items" value='${JSON.stringify(item)}'>
+          <button type="button" onclick="removeItem('${item.id}')" style="background: var(--danger);">O'chirish</button>
+        </div>
+      `;
+    });
+    
+    list.innerHTML = html;
+    document.getElementById('totalItems').textContent = `${orderItems.length} ta mahsulot`;
+    document.getElementById('totalPrice').textContent = total.toLocaleString('uz-UZ');
+    summary.style.display = 'block';
+  }
+
+  // Customer Search
+  document.getElementById('customerSearch')?.addEventListener('input', async (e) => {
+    const q = e.target.value.trim();
+    if (q.length < 2) {
+      document.getElementById('customerResults').classList.remove('active');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}`);
+      const customers = await res.json();
+      
+      let html = '';
+      customers.forEach(c => {
+        html += `
+          <div class="search-result-item" onclick="selectCustomer('${c.id}', '${c.name}', '${c.phone}', '${c.telegram}', '${c.instagram}')">
+            <b>${c.name}</b><br>
+            <small>${c.phone || ''} ${c.telegram ? '@' + c.telegram : ''}</small>
+          </div>
+        `;
+      });
+      
+      const resultsDiv = document.getElementById('customerResults');
+      resultsDiv.innerHTML = html || '<div class="search-result-item" style="cursor: default;">Topilmadi</div>';
+      resultsDiv.classList.add('active');
+    } catch (err) {
+      console.error('Search error:', err);
+    }
+  });
+
+  function selectCustomer(id, name, phone, telegram, instagram) {
+    document.getElementById('customerId').value = id;
+    document.getElementById('customerName').value = name;
+    document.getElementById('customerPhone').value = phone;
+    document.getElementById('telegramInput').value = telegram;
+    document.getElementById('instagramInput').value = instagram;
+    document.getElementById('customerSearch').value = `${name} ${phone}`;
+    document.getElementById('customerResults').classList.remove('active');
+  }
+
+  // Product Search
+  document.getElementById('productSearch')?.addEventListener('input', async (e) => {
+    const q = e.target.value.trim();
+    if (q.length < 1) {
+      document.getElementById('productResults').classList.remove('active');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/products/finished?q=${encodeURIComponent(q)}`);
+      const products = await res.json();
+      
+      let html = '';
+      products.forEach(p => {
+        html += `
+          <div class="search-result-item" onclick="selectProduct('${p.id}', '${p.name}', '${p.article}', ${p.sale_price})">
+            <b>${p.name}</b> ${p.color ? p.color : ''} ${p.size ? p.size : ''}<br>
+            <small>${p.article || ''} - ${p.sale_price.toLocaleString()} UZS</small>
+          </div>
+        `;
+      });
+      
+      const resultsDiv = document.getElementById('productResults');
+      resultsDiv.innerHTML = html || '<div class="search-result-item" style="cursor: default;">Topilmadi</div>';
+      resultsDiv.classList.add('active');
+    } catch (err) {
+      console.error('Search error:', err);
+    }
+  });
+
+  function selectProduct(id, name, article, price) {
+    selectedProduct = { id, name, article, sale_price: price };
+    document.getElementById('productSearch').value = `${name} (${article || 'kodi yo\'q'})`;
+    document.getElementById('productResults').classList.remove('active');
+    document.getElementById('productQty').focus();
+  }
+</script>
 {% endif %}
 
 <section class="panel filters">
-  <form class="inline">
+  <form class="inline" method="get">
     <select name="status">
       <option value="">Barcha statuslar</option>
       {% for status in order_statuses %}
