@@ -21,4 +21,4 @@ jobs:
           git config user.name "Bot"
           git config user.email "bot@github.com"
           git remote add fork https://x-access-token:${{ secrets.FORK_SYNC_TOKEN }}@github.com/tallbooydev-404/Skladchi0.git
-          git push fork main --force-with-lease
+          git push fork main --force
