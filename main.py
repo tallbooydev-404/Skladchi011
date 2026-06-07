@@ -46,12 +46,22 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
+# Database initialization with retry logic
 logger.info("🔌 MongoDB baza Ishga Tushirilmoqda...")
-try:
-    init_db()
-    logger.info("✅ MongoDB baza tayyor")
-except Exception as e:
-    logger.error(f"❌ MongoDB xatosi: {e}")
+db_initialized = False
+for attempt in range(3):
+    try:
+        init_db()
+        logger.info("✅ MongoDB baza tayyor")
+        db_initialized = True
+        break
+    except Exception as e:
+        logger.error(f"❌ MongoDB ulanish xatosi (Urinish {attempt + 1}/3): {e}")
+        if attempt < 2:
+            time.sleep(2)  # Wait 2 seconds before retrying
+
+if not db_initialized:
+    logger.warning("⚠️ MongoDB baza ulanmadi. App blokirovkasiz ishga tushirildi (faqat xavfsizlik uchun)")
 
 # ==================== USER STATE STORAGE ====================
 user_states = {}

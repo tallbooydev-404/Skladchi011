@@ -11,6 +11,19 @@ from database.mongodb import get_db
 
 logger = logging.getLogger(__name__)
 
+# Helper function to check database availability
+def _check_db_available():
+    """Check if database is available, return db or None"""
+    try:
+        db = get_db()
+        if db:
+            # Quick test query
+            db.get_all_warehouses()
+            return db
+    except Exception as e:
+        logger.error(f"Database check failed: {e}")
+    return None
+
 ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "admin123")
 
 CRM_ROLES = {"admin", "manager", "warehouseman", "employee", "customer"}
@@ -35,7 +48,10 @@ def _current_user():
         return None
     if session.get("role") == "admin" and int(user_id) == ADMIN_ID:
         return {"user_id": ADMIN_ID, "username": "admin", "first_name": "Admin", "role": "admin", "approved": True}
-    return get_db().get_user(int(user_id))
+    db = get_db()
+    if not db:
+        return None
+    return db.get_user(int(user_id))
 
 
 def _role(user):
@@ -60,7 +76,7 @@ def _login_required(roles=None):
 def _base_context(user=None):
     db = get_db()
     user = user or _current_user()
-    warehouses = db.get_all_warehouses()
+    warehouses = db.get_all_warehouses() if db else []
     selected_warehouse = request.values.get("warehouse") or (warehouses[0]["name"] if warehouses else None)
     return {
         "user": user,
@@ -127,12 +143,45 @@ def register_web_routes(app):
     def web_home():
         return redirect(url_for("web_dashboard" if _current_user() else "web_login"))
 
+    @app.get("/health")
+    def web_health():
+        """Health check endpoint - returns database status"""
+        db = _check_db_available()
+        if db:
+            return jsonify({"status": "healthy", "database": "connected"}), 200
+        return jsonify({"status": "degraded", "database": "disconnected"}), 503
+
+    @app.get("/status")
+    def web_status():
+        """Status page with debugging info"""
+        db = _check_db_available()
+        db_status = "✅ Connected" if db else "❌ Disconnected"
+        return f"""
+        <html>
+        <head><title>System Status</title></head>
+        <body style="font-family: monospace; padding: 20px; background: #f0f0f0;">
+            <h1>Skladchi CRM - System Status</h1>
+            <p><b>Database:</b> {db_status}</p>
+            <hr>
+            <p><a href="/login">Go to Login</a></p>
+        </body>
+        </html>
+        """, 200
+
     @app.get("/login")
     def web_login():
-        return render_template("login.html", **_base_context())
+        db = _check_db_available()
+        if not db:
+            return render_template("login.html", db_available=False, **_base_context())
+        return render_template("login.html", db_available=True, **_base_context())
 
     @app.post("/login")
     def web_login_post():
+        db = _check_db_available()
+        if not db:
+            flash("Database hozir mavjud emas. Iltimos, keyinroq urinib ko'ring.", "error")
+            return redirect(url_for("web_login"))
+            
         login = request.form.get("login", "").strip()
         password = request.form.get("password", "")
         if not login or not password:
@@ -144,7 +193,6 @@ def register_web_routes(app):
             session.update({"user_id": ADMIN_ID, "role": "admin"})
             return redirect(url_for("web_dashboard"))
 
-        db = get_db()
         user = db.find_user_for_login(login)
         if not user or not user.get("approved"):
             flash("Foydalanuvchi topilmadi yoki admin tasdiqlamagan.", "error")
@@ -169,6 +217,9 @@ def register_web_routes(app):
         if response:
             return response
         db = get_db()
+        if not db:
+            flash("Database hozir mavjud emas. Iltimos, bir necha minut kuting.", "error")
+            return render_template("dashboard.html", **_base_context(user), stats=None, report=None, orders=[], critical=[])
         ctx = _base_context(user)
         stats = db.get_order_stats()
         report = db.get_crm_report()
@@ -285,6 +336,9 @@ def register_web_routes(app):
         if response:
             return response
         db = get_db()
+        if not db:
+            flash("Database hozir mavjud emas. Iltimos, bir necha minut kuting.", "error")
+            return render_template("orders.html", **_base_context(user), orders=[], products=[], customers=[], selected_status="")
         ctx = _base_context(user)
         if ctx["role"] == "customer":
             orders = db.get_orders(customer_id=user["user_id"])
@@ -302,6 +356,9 @@ def register_web_routes(app):
         if response:
             return response
         db = get_db()
+        if not db:
+            flash("Database hozir mavjud emas. Iltimos, bir necha minut kuting.", "error")
+            return redirect(url_for("web_orders"))
         ctx = _base_context(user)
         
         # Get items from form (multiple products support)
@@ -576,6 +633,8 @@ def register_web_routes(app):
             return jsonify([])
         
         db = get_db()
+        if not db:
+            return jsonify([]), 503
         customers = db.get_customers(query, limit=limit)
         result = []
         for c in customers:
@@ -596,6 +655,10 @@ def register_web_routes(app):
         if response:
             return {"error": "Unauthorized"}, 401
         
+        db = get_db()
+        if not db:
+            return {"error": "Database unavailable"}, 503
+        
         try:
             data = request.get_json()
             product_id = data.get("product_id")
@@ -604,7 +667,6 @@ def register_web_routes(app):
             if not product_id or quantity <= 0:
                 return {"error": "Mahsulot yoki miqdor noto'g'ri"}, 400
             
-            db = get_db()
             product = db.get_finished_product(product_id)
             if not product:
                 return {"error": "Mahsulot topilmadi"}, 404
@@ -635,6 +697,8 @@ def register_web_routes(app):
         limit = int(request.args.get("limit", 50))
         
         db = get_db()
+        if not db:
+            return jsonify([]), 503
         products = db.get_finished_products(search=query, active=True)[:limit]
         
         result = []

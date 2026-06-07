@@ -95,6 +95,16 @@ button,
 }
 button:hover,
 .link:hover { background: var(--primary-dark); }
+button:disabled,
+.link:disabled,
+button[disabled],
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--muted);
+}
 button.ghost,
 .link { background: #e9eee6; color: #263127; }
 button.ghost:hover,

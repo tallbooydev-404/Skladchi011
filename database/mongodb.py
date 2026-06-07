@@ -14,7 +14,13 @@ class MongoDBManager:
     """MongoDB bilan ishlash uchun asosiy klass"""
     
     def __init__(self):
+        if not MONGO_URI:
+            error_msg = "❌ MONGO_URI environment variable is not set. Please configure MongoDB connection string."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+            
         try:
+            logger.info(f"🔌 MongoDB ga ulanishga harakat: {MONGO_URI[:20]}...")
             self.client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
             self.client.admin.command("ping")
             self.db = self.client[DB_NAME]
