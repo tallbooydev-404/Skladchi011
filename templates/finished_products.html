@@ -15,7 +15,8 @@
 </section>
 
 {% if role in ['admin','manager'] %}
-<form class="panel stack" method="post" action="{{ url_for('web_add_finished_product') }}">
+<button type="button" class="js-toggle" data-target="add-panel">+ Qo'shish</button>
+<form id="add-panel" class="panel stack collapsible" method="post" action="{{ url_for('web_add_finished_product') }}">
   <h2>Yangi tayyor mahsulot</h2>
   <div class="grid five">
     <input name="name" placeholder="Nomi" required>
@@ -69,7 +70,7 @@
         <option value="{{ material._id }}">{{ material.name }} ({{ material.unit }})</option>
         {% endfor %}
       </select>
-      <input name="quantity" type="number" min="0.001" step="0.001" placeholder="1 dona uchun">
+      <input name="quantity" type="number" min="1" step="1" placeholder="1 dona uchun">
       <button>Retseptga qo'shish</button>
     </form>
     {% endif %}

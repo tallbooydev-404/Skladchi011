@@ -1004,6 +1004,11 @@ class MongoDBManager:
         orders = list(self.db["orders"].find(order_query))
         expenses = self.get_expenses(date_from, date_to)
         revenue = sum(float(order.get("total_amount") or 0) for order in orders if order.get("status") != "cancelled")
+        cost_total = sum(
+            float(item.get("cost") or 0) * float(item.get("quantity") or 0)
+            for order in orders if order.get("status") != "cancelled"
+            for item in order.get("items", [])
+        )
         expense_total = sum(float(exp.get("amount") or 0) for exp in expenses)
         product_sales = {}
         for order in orders:
@@ -1015,8 +1020,9 @@ class MongoDBManager:
         return {
             "orders_count": len(orders),
             "revenue": revenue,
+            "cost": cost_total,
             "expenses": expense_total,
-            "profit": revenue - expense_total,
+            "profit": revenue - cost_total - expense_total,
             "product_sales": product_sales,
         }
 
@@ -1109,8 +1115,10 @@ class MongoDBManager:
 
     def update_order_status(self, order_id, status, actor_name, note=None, assigned_to=None):
         event_text = note or status
-        if status == "materials_checked":
-            self.refresh_order_materials(order_id)
+        if status in {"confirmed", "materials_checked"}:
+            refreshed = self.refresh_order_materials(order_id)
+            if status == "confirmed" and refreshed and not refreshed[0]:
+                return False
         if status == "in_production":
             order = self.get_order(order_id)
             if order and order.get("items") and not order.get("materials_consumed"):

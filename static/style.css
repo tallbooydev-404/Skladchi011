@@ -208,3 +208,6 @@ td small { display: block; margin-top: 5px; }
   }
   .responsive-table td:last-child { border-bottom: 0; }
 }
+.collapsible { display: none; margin-top: 12px; }
+.collapsible.is-open { display: grid; }
+.order-line { align-items: start; }

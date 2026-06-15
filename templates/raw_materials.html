@@ -17,8 +17,9 @@
   </form>
 </section>
 
-{% if role in ['admin','manager','warehouseman'] %}
-<form class="panel stack" method="post" action="{{ url_for('web_add_raw_material') }}">
+{% if role == 'admin' %}
+<button type="button" class="js-toggle" data-target="add-panel">+ Qo'shish</button>
+<form id="add-panel" class="panel stack collapsible" method="post" action="{{ url_for('web_add_raw_material') }}">
   <h2>Yangi xomashyo</h2>
   <input type="hidden" name="warehouse" value="{{ selected_warehouse }}">
   <div class="grid four">
@@ -28,9 +29,9 @@
     <input name="code" placeholder="Kod">
   </div>
   <div class="grid three">
-    <input name="quantity" type="number" step="0.01" placeholder="Boshlang'ich qoldiq">
-    <input name="avg_cost" type="number" step="0.01" placeholder="Sotib olish narxi">
-    <input name="min_quantity" type="number" step="0.01" placeholder="Minimal qoldiq">
+    <input name="quantity" type="number" step="10" placeholder="Boshlang'ich qoldiq">
+    <input name="avg_cost" type="number" step="500" placeholder="Sotib olish narxi">
+    <input name="min_quantity" type="number" step="1" placeholder="Minimal qoldiq">
   </div>
   <button>Qo'shish</button>
 </form>
@@ -53,7 +54,7 @@
             <form method="post" action="{{ url_for('web_adjust_raw_material', material_id=item._id) }}" class="inline compact">
               <input type="hidden" name="warehouse" value="{{ item.warehouse }}">
               <select name="type"><option value="in">Kirim</option><option value="out">Chiqim</option><option value="adjust">Tuzatish</option></select>
-              <input name="quantity" type="number" step="0.01" placeholder="Miqdor">
+              <input name="quantity" type="number" step="1" placeholder="Miqdor">
               <input name="note" placeholder="Izoh">
               <button>Saqlash</button>
             </form>
@@ -68,6 +69,7 @@
   </div>
 </section>
 
+{% if role != 'employee' %}
 <section class="panel">
   <h2>Kirim-chiqim jurnali</h2>
   <div class="table-wrap">
@@ -83,4 +85,5 @@
     </table>
   </div>
 </section>
+{% endif %}
 {% endblock %}

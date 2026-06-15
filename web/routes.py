@@ -185,7 +185,7 @@ def register_web_routes(app):
             return response
         ctx = _base_context(user)
         materials = get_db().get_raw_materials(ctx["selected_warehouse"], request.args.get("q"))
-        movements = get_db().get_stock_movements(limit=60)
+        movements = [] if ctx["role"] == "employee" else get_db().get_stock_movements(limit=60)
         return render_template("raw_materials.html", **ctx, materials=materials, movements=movements, q=request.args.get("q", ""))
 
     @app.post("/raw-materials")
@@ -295,34 +295,42 @@ def register_web_routes(app):
             return response
         db = get_db()
         ctx = _base_context(user)
-        product = db.get_finished_product(request.form.get("product_id"))
-        quantity = _to_float(request.form.get("quantity"), 1)
-        if not product or quantity <= 0:
-            flash("Tayyor mahsulot va miqdorni to'g'ri tanlang.", "error")
+        product_ids = request.form.getlist("product_id")
+        quantities = request.form.getlist("quantity")
+        items = []
+        for index, product_id in enumerate(product_ids):
+            product = db.get_finished_product(product_id)
+            quantity = _to_float(quantities[index] if index < len(quantities) else 1, 1)
+            if not product or quantity <= 0:
+                continue
+            unit_price = float(product.get("sale_price") or 0)
+            items.append({
+                "product_id": str(product["_id"]),
+                "product_name": product.get("name"),
+                "article": product.get("article"),
+                "color": product.get("color"),
+                "size": product.get("size"),
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "cost": float(product.get("cost") or 0),
+                "total": quantity * unit_price,
+            })
+        if not items:
+            flash("Kamida bitta tayyor mahsulot va miqdorni to'g'ri tanlang.", "error")
             return redirect(url_for("web_orders"))
-        unit_price = _to_float(request.form.get("unit_price"), float(product.get("sale_price") or 0))
-        item = {
-            "product_id": str(product["_id"]),
-            "product_name": product.get("name"),
-            "article": product.get("article"),
-            "color": product.get("color"),
-            "size": product.get("size"),
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "total": quantity * unit_price,
-        }
         if ctx["role"] == "customer":
             customer_id = user["user_id"]
             customer_name = _display_name(user)
             phone = user.get("phone")
             source = "telegram/web"
         else:
-            customer_name = request.form.get("customer_name", "").strip() or "Noma'lum mijoz"
-            phone = request.form.get("customer_phone", "").strip() or None
-            customer_id = phone or customer_name
+            customer = db.get_customer(request.form.get("customer_id")) if request.form.get("customer_id") else None
+            customer_name = (customer or {}).get("name") or request.form.get("customer_name", "").strip() or "Noma'lum mijoz"
+            phone = (customer or {}).get("phone") or request.form.get("customer_phone", "").strip() or None
+            customer_id = str((customer or {}).get("_id") or phone or customer_name)
             source = request.form.get("source") or "admin"
             db.upsert_customer(customer_name, phone=phone, telegram=request.form.get("telegram"), instagram=request.form.get("instagram"), source=source)
-        title = f"{item['product_name']} x {quantity:g}"
+        title = ", ".join(f"{item['product_name']} x {item['quantity']:g}" for item in items[:3])
         order_id = db.create_order(
             customer_id,
             customer_name,
@@ -330,7 +338,7 @@ def register_web_routes(app):
             request.form.get("description", "").strip(),
             request.form.get("warehouse") or ctx["selected_warehouse"],
             request.form.get("branch") or None,
-            [item],
+            items,
             source,
             phone,
         )

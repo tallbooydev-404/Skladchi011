@@ -3,58 +3,56 @@
 <header class="top">
   <div>
     <h1>Buyurtmalar</h1>
-    <p>Admin yoki mijoz buyurtma yaratadi, statuslar orqali ishlab chiqarish nazorat qilinadi.</p>
+    <p>Buyurtma maxsus tugma orqali ochiladi; mahsulot tanlanganda narx va artikul avtomatik olinadi.</p>
   </div>
 </header>
 
 {% if role in ['customer','admin','manager'] %}
-<form class="panel stack order-form" method="post" action="{{ url_for('web_create_order') }}">
+<button type="button" class="js-toggle" data-target="order-create-panel">+ Yangi buyurtma</button>
+<form id="order-create-panel" class="panel stack order-form collapsible" method="post" action="{{ url_for('web_create_order') }}">
   <h2>Yangi buyurtma</h2>
   {% if role in ['admin','manager'] %}
   <div class="grid three">
-    <input name="customer_name" placeholder="Xaridor nomi">
-    <input name="customer_phone" placeholder="Telefon">
-    <input name="source" placeholder="Manba: Telegram/Instagram">
-  </div>
-  <div class="grid three">
-    <input name="telegram" placeholder="Telegram username">
-    <input name="instagram" placeholder="Instagram">
-    <input name="branch" placeholder="Filial/izoh">
-  </div>
-  {% endif %}
-  <div class="grid four">
-    <select name="warehouse">
-      <option value="">Sklad</option>
-      {% for wh in warehouses %}<option {{ 'selected' if wh.name == selected_warehouse }}>{{ wh.name }}</option>{% endfor %}
-    </select>
-    <select name="product_id" required>
-      <option value="">Tayyor mahsulot</option>
-      {% for product in products %}
-      <option value="{{ product._id }}">{{ product.name }} {{ product.color or '' }} {{ product.size or '' }}</option>
+    <select name="customer_id" data-customer-select>
+      <option value="">Yangi xaridor yoki qidirib tanlash</option>
+      {% for customer in customers %}
+      <option value="{{ customer._id }}" data-name="{{ customer.name }}" data-phone="{{ customer.phone or '' }}" data-telegram="{{ customer.telegram or '' }}" data-instagram="{{ customer.instagram or '' }}">{{ customer.name }} {{ customer.phone or '' }} {{ customer.telegram or '' }}</option>
       {% endfor %}
     </select>
-    <input name="quantity" type="number" min="0.01" step="0.01" value="1" placeholder="Miqdor">
-    <input name="unit_price" type="number" min="0" step="100" placeholder="Narx">
+    <input name="customer_name" placeholder="Xaridor nomi">
+    <input name="customer_phone" placeholder="Telefon">
   </div>
+  <div class="grid three">
+    <input name="source" placeholder="Manba: Telegram/Instagram">
+    <input name="telegram" placeholder="Telegram username">
+    <input name="instagram" placeholder="Instagram">
+  </div>
+  {% endif %}
+   <input name="branch" placeholder="Filial/izoh">
+  <select name="warehouse">
+    <option value="">Sklad</option>
+    {% for wh in warehouses %}<option {{ 'selected' if wh.name == selected_warehouse }}>{{ wh.name }}</option>{% endfor %}
+  </select>
+  <div id="order-items" class="stack">
+    <div class="grid four order-line">
+      <select name="product_id" required data-product-select>
+        <option value="">Artikul yoki mahsulotni tanlang</option>
+        {% for product in products %}
+        <option value="{{ product._id }}" data-price="{{ product.sale_price or 0 }}" data-article="{{ product.article or '' }}" data-color="{{ product.color or '' }}" data-size="{{ product.size or '' }}">{{ product.article or 'Artikulsiz' }} — {{ product.name }} {{ product.color or '' }} {{ product.size or '' }}</option>
+        {% endfor %}
+      </select>
+      <input name="quantity" type="number" min="1" step="1" value="1" placeholder="Soni">
+      <input readonly data-product-info placeholder="Rang / o'lcham / artikul">
+      <input readonly data-line-total placeholder="Summa">
+    </div>
+  </div>
+  <button type="button" class="ghost" data-add-order-line>+ Yana mahsulot</button>
   <textarea name="description" placeholder="Buyurtma izohi, o'lchamlar yoki yetkazish ma'lumoti"></textarea>
+  <strong>Umumiy summa: <span data-order-total>0</span></strong>
   <button>Buyurtma yaratish</button>
 </form>
 {% endif %}
 
-<section class="panel filters">
-  <form class="inline">
-    <select name="status">
-      <option value="">Barcha statuslar</option>
-      {% for status in order_statuses %}
-      <option value="{{ status }}" {{ 'selected' if selected_status == status }}>{{ status_label(status) }}</option>
-      {% endfor %}
-    </select>
-    <button class="ghost">Filter</button>
-  </form>
-</section>
-
-<section class="panel">
-  <h2>Ro'yxat</h2>
-  {% include '_orders_table.html' %}
-</section>
+<section class="panel filters"><form class="inline"><select name="status"><option value="">Barcha statuslar</option>{% for status in order_statuses %}<option value="{{ status }}" {{ 'selected' if selected_status == status }}>{{ status_label(status) }}</option>{% endfor %}</select><button class="ghost">Filter</button></form></section>
+<section class="panel"><h2>Ro'yxat</h2>{% include '_orders_table.html' %}</section>
 {% endblock %}

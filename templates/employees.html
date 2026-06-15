@@ -7,7 +7,8 @@
   </div>
 </header>
 
-<form class="panel stack" method="post" action="{{ url_for('web_add_employee') }}">
+<button type="button" class="js-toggle" data-target="add-panel">+ Qo'shish</button>
+<form id="add-panel" class="panel stack collapsible" method="post" action="{{ url_for('web_add_employee') }}">
   <h2>Yangi xodim</h2>
   <div class="grid four">
     <input name="first_name" placeholder="Ism" required>
