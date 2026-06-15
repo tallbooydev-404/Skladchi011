@@ -3,20 +3,11 @@
 <section class="login-card">
   <div class="logo">📦</div>
   <h1>Sklad CRM login</h1>
-  
-  {% if not db_available %}
-  <div style="background: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px;">
-    <b>⚠️ Muammo:</b> Database hozir mavjud emas.<br>
-    Iltimos, bir necha minut kuting va qayta urinib ko'ring.<br>
-    <small>Status: <a href="/status" target="_blank">Tekshirish</a></small>
-  </div>
-  {% endif %}
-  
   <p>Telegram bot tasdiqlagan username yoki user_id va bot bergan parol bilan kiring.</p>
-  <form method="post" class="stack" {% if not db_available %}disabled{% endif %}>
-    <label>Username yoki user_id<input name="login" placeholder="admin yoki 123456789" required {% if not db_available %}disabled{% endif %}></label>
-    <label>Parol<input type="password" name="password" placeholder="Bot bergan parol" required {% if not db_available %}disabled{% endif %}></label>
-    <button {% if not db_available %}disabled{% endif %}>Kirish</button>
+  <form method="post" class="stack">
+    <label>Username yoki user_id<input name="login" placeholder="admin yoki 123456789" required></label>
+    <label>Parol<input type="password" name="password" placeholder="Bot bergan parol" required></label>
+    <button>Kirish</button>
   </form>
   <small>MVP admin login: <b>admin</b>, parol Render envdagi <b>WEB_ADMIN_PASSWORD</b> (default: admin123).</small>
 </section>

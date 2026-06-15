@@ -14,13 +14,7 @@ class MongoDBManager:
     """MongoDB bilan ishlash uchun asosiy klass"""
     
     def __init__(self):
-        if not MONGO_URI:
-            error_msg = "❌ MONGO_URI environment variable is not set. Please configure MongoDB connection string."
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-            
         try:
-            logger.info(f"🔌 MongoDB ga ulanishga harakat: {MONGO_URI[:20]}...")
             self.client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
             self.client.admin.command("ping")
             self.db = self.client[DB_NAME]
@@ -53,8 +47,6 @@ class MongoDBManager:
             "expenses",
             "payments",
             "attendance",
-            "job_categories",
-            "exchange_rates",
         ]
         for name in collections:
             if name not in self.db.list_collection_names():
@@ -105,9 +97,6 @@ class MongoDBManager:
             [("product_name", 1), ("warehouse", 1), ("branch", 1), ("product_type", 1)],
             unique=True,
         )
-        # Job categories and exchange rates indexes
-        self.db["job_categories"].create_index([("name", 1)], unique=True, sparse=True)
-        self.db["exchange_rates"].create_index([("currency", 1), ("date", 1)], unique=True, sparse=True)
         self._migrate_legacy_products_to_raw_materials()
 
     def _migrate_legacy_products_to_raw_materials(self):
@@ -1149,140 +1138,6 @@ class MongoDBManager:
         stats["rejected"] = stats.get("rejected", 0) + stats.get("cancelled", 0)
         stats["total"] = self.db["orders"].count_documents({})
         return stats
-
-    # ==================== JOB CATEGORIES ====================
-    
-    def add_job_category(self, name, description=None, active=True):
-        """Ishbay ishchi kategoriyasi qo'shish"""
-        try:
-            doc = {
-                "name": name.strip(),
-                "description": description,
-                "active": bool(active),
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-            }
-            result = self.db["job_categories"].insert_one(doc)
-            return str(result.inserted_id)
-        except DuplicateKeyError:
-            return None
-
-    def get_job_categories(self, active=None):
-        """Hammasi yoki faol ishbay kategoriyalarini olish"""
-        query = {}
-        if active is not None:
-            query["active"] = active
-        return list(self.db["job_categories"].find(query).sort("name", 1))
-
-    def update_job_category(self, category_id, name=None, description=None, active=None):
-        """Ishbay kategoriyasini tahrirlash"""
-        update = {"updated_at": datetime.utcnow()}
-        if name is not None:
-            update["name"] = name.strip()
-        if description is not None:
-            update["description"] = description
-        if active is not None:
-            update["active"] = bool(active)
-        self.db["job_categories"].update_one({"_id": ObjectId(category_id)}, {"$set": update})
-        return True
-
-    def delete_job_category(self, category_id):
-        """Ishbay kategoriyasini o'chirish"""
-        self.db["job_categories"].delete_one({"_id": ObjectId(category_id)})
-        return True
-
-    # ==================== EXCHANGE RATES ====================
-    
-    def set_exchange_rate(self, currency, rate, date_str=None):
-        """Valyuta kursini belgilash (e.g., USD to UZS)"""
-        if not date_str:
-            date_str = datetime.utcnow().strftime("%Y-%m-%d")
-        doc = {
-            "currency": currency.upper(),
-            "rate": float(rate),
-            "date": date_str,
-            "updated_at": datetime.utcnow(),
-        }
-        self.db["exchange_rates"].update_one(
-            {"currency": currency.upper(), "date": date_str},
-            {"$set": doc},
-            upsert=True,
-        )
-        return True
-
-    def get_exchange_rate(self, currency, date_str=None):
-        """Valyuta kursini olish"""
-        if not date_str:
-            date_str = datetime.utcnow().strftime("%Y-%m-%d")
-        doc = self.db["exchange_rates"].find_one({"currency": currency.upper(), "date": date_str})
-        if doc:
-            return float(doc.get("rate", 1.0))
-        # Agar bugun yo'q bo'lsa, oxirgi kursni qidirish
-        doc = self.db["exchange_rates"].find_one({"currency": currency.upper()}, sort=[("date", -1)])
-        return float(doc.get("rate", 1.0)) if doc else 1.0
-
-    # ==================== FINISHED PRODUCTS (UPDATED) ====================
-    
-    def update_finished_product(self, product_id, name=None, article=None, color=None, size=None, sale_price=None, cost_price=None, labor_costs=None, primary_currency=None, active=None):
-        """Tayyor mahsulotni tahrirlash - narx, xomashyo xaraji, ishbay xaraji qo'shish"""
-        update = {"updated_at": datetime.utcnow()}
-        if name is not None:
-            update["name"] = name
-        if article is not None:
-            update["article"] = article
-        if color is not None:
-            update["color"] = color
-        if size is not None:
-            update["size"] = size
-        if sale_price is not None:
-            update["sale_price"] = float(sale_price)
-        if cost_price is not None:
-            update["cost_price"] = float(cost_price)
-        if labor_costs:  # List of {job_category_id, quantity, price}
-            update["labor_costs"] = labor_costs
-        if primary_currency is not None:
-            update["primary_currency"] = primary_currency  # "USD" or "UZS"
-        if active is not None:
-            update["active"] = bool(active)
-        
-        result = self.db["finished_products"].update_one(
-            {"_id": ObjectId(product_id)},
-            {"$set": update}
-        )
-        return result.modified_count > 0
-
-    def calculate_product_cost_with_labor(self, product_id):
-        """Mahsulot xarajini hisoblash: xomashyo + ishbay xaraji"""
-        # Xomashyo xaraji
-        material_cost = self.calculate_product_cost(product_id)
-        
-        # Ishbay xaraji
-        product = self.get_finished_product(product_id)
-        if not product:
-            return material_cost
-        
-        labor_cost = 0.0
-        for labor in product.get("labor_costs", []):
-            labor_cost += float(labor.get("price", 0)) * float(labor.get("quantity", 1))
-        
-        return material_cost + labor_cost
-
-    def convert_price(self, amount, from_currency="USD", to_currency="UZS", date_str=None):
-        """Narxni valyutadan valyutaga o'tkazish"""
-        if from_currency == to_currency:
-            return amount
-        
-        if not date_str:
-            date_str = datetime.utcnow().strftime("%Y-%m-%d")
-        
-        rate = self.get_exchange_rate(f"{from_currency}_TO_{to_currency}", date_str)
-        if rate == 1.0:
-            # Agar direkta kurs yo'q bo'lsa, teskari kursni qidirish
-            reverse_rate = self.get_exchange_rate(f"{to_currency}_TO_{from_currency}", date_str)
-            if reverse_rate != 1.0:
-                rate = 1.0 / reverse_rate
-        
-        return amount * rate
 
 # Global
 _db_manager = None

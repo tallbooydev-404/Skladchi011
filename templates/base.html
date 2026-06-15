@@ -19,8 +19,6 @@
         <a href="{{ url_for('web_orders') }}">Buyurtmalar</a>
         {% if role in ['admin','manager'] %}<a href="{{ url_for('web_customers') }}">Xaridorlar</a>{% endif %}
         {% if role in ['admin','manager'] %}<a href="{{ url_for('web_employees') }}">Xodimlar</a>{% endif %}
-        {% if role in ['admin','manager'] %}<a href="{{ url_for('web_job_categories') }}">Ishbay kategoriyalari</a>{% endif %}
-        {% if role in ['admin','manager'] %}<a href="{{ url_for('web_exchange_rates') }}">Valyuta kursları</a>{% endif %}
         {% if role in ['admin','manager'] %}<a href="{{ url_for('web_expenses') }}">Xarajatlar</a>{% endif %}
         {% if role in ['admin','manager'] %}<a href="{{ url_for('web_reports') }}">Hisobot</a>{% endif %}
         {% if role == 'admin' %}<a href="{{ url_for('web_management') }}">Sozlamalar</a>{% endif %}

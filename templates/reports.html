@@ -1,23 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<style>
-  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 8px; }
-  .metric-card.revenue { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-  .metric-card.expense { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-  .metric-card.profit { background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); }
-  .metric-card b { display: block; font-size: 24px; margin-top: 8px; }
-  .metric-card small { display: block; opacity: 0.8; margin-top: 4px; font-size: 12px; }
-  .chart-wrapper { background: #f9f9f9; padding: 12px; border-radius: 8px; margin: 12px 0; }
-  .bar { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
-  .bar-label { width: 120px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar-fill { flex: 1; background: linear-gradient(90deg, var(--primary), #4caf50); height: 24px; border-radius: 4px; display: flex; align-items: center; color: white; font-size: 11px; padding-left: 4px; }
-</style>
-
 <header class="top">
   <div>
     <h1>Hisobot</h1>
-    <p>Davr bo'yicha sotuv, xarajat va foyda hisobi</p>
+    <p>Davr bo'yicha sotuv, xarajat va foyda.</p>
   </div>
 </header>
 
@@ -29,108 +15,26 @@
   </form>
 </section>
 
-<div class="metric-grid">
-  <div class="metric-card">
-    <small>BUYURTMALAR</small>
-    <b>{{ report.orders_count }}</b>
-  </div>
-  <div class="metric-card revenue">
-    <small>DAROMAD</small>
-    <b>{{ "%.0f"|format(report.revenue) }}</b>
-  </div>
-  <div class="metric-card expense">
-    <small>XARAJAT</small>
-    <b>{{ "%.0f"|format(report.expenses) }}</b>
-  </div>
-  <div class="metric-card profit">
-    <small>FOYDA</small>
-    <b>{{ "%.0f"|format(report.profit) }}</b>
-  </div>
+<div class="cards">
+  <div class="card"><b>{{ report.orders_count }}</b><span>Buyurtma</span></div>
+  <div class="card"><b>{{ "%.0f"|format(report.revenue) }}</b><span>Daromad</span></div>
+  <div class="card"><b>{{ "%.0f"|format(report.expenses) }}</b><span>Xarajat</span></div>
+  <div class="card"><b>{{ "%.0f"|format(report.profit) }}</b><span>Foyda</span></div>
 </div>
-
-{% if report.profit >= 0 %}
-<div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 12px; border-radius: 8px; margin: 16px 0; text-align: center;">
-  <b>✓ Foyda: {{ "%.0f"|format(report.profit) }} UZS</b>
-</div>
-{% else %}
-<div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 12px; border-radius: 8px; margin: 16px 0; text-align: center;">
-  <b>✗ Zarur: {{ "%.0f"|format(-report.profit) }} UZS</b>
-</div>
-{% endif %}
 
 <section class="panel">
   <h2>Mahsulotlar bo'yicha sotuv</h2>
-  {% if report.product_sales %}
-  <div class="chart-wrapper">
-    {% set max_amount = report.product_sales.values()|map(attribute='amount')|max|default(1) %}
-    {% for name, row in report.product_sales.items()|sort(attribute='1.amount', reverse=true) %}
-    <div class="bar">
-      <div class="bar-label" title="{{ name }}">{{ name }}</div>
-      <div class="bar-fill" style="width: {{ (row.amount / max_amount * 100)|int }}%; min-width: 60px;">
-        {{ row.quantity|int }} x {{ "%.0f"|format(row.amount / row.quantity) if row.quantity else 0 }}
-      </div>
-      <div style="width: 100px; text-align: right; font-size: 12px; font-weight: bold;">
-        {{ "%.0f"|format(row.amount) }}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p style="color: var(--muted); text-align: center; padding: 20px;">Sotuv yo'q</p>
-  {% endif %}
-</section>
-
-<section class="panel">
-  <h2>Mahsulot boshqalari</h2>
-  <table style="width: 100%; border-collapse: collapse;">
-    <thead>
-      <tr style="border-bottom: 2px solid var(--line);">
-        <th style="text-align: left; padding: 12px;">Mahsulot</th>
-        <th style="text-align: center; padding: 12px;">Miqdor</th>
-        <th style="text-align: right; padding: 12px;">Narxi</th>
-        <th style="text-align: right; padding: 12px;">Jami</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for name, row in report.product_sales.items()|sort(attribute='1.amount', reverse=true) %}
-      <tr style="border-bottom: 1px solid var(--line);">
-        <td style="padding: 12px;">{{ name }}</td>
-        <td style="text-align: center; padding: 12px;">{{ row.quantity|int }}</td>
-        <td style="text-align: right; padding: 12px;">{{ "%.0f"|format(row.amount / row.quantity) if row.quantity else 0 }} UZS</td>
-        <td style="text-align: right; padding: 12px; font-weight: bold;">{{ "%.0f"|format(row.amount) }} UZS</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="4" style="padding: 12px; text-align: center; color: var(--muted);">Sotuv yo'q</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section class="panel">
-  <h2>Statistika</h2>
-  <div class="grid two">
-    <div>
-      <p style="margin: 0; color: var(--muted); font-size: 14px;">O'rtacha buyurtma summasi</p>
-      <b style="font-size: 20px;">
-        {% if report.orders_count > 0 %}
-          {{ "%.0f"|format(report.revenue / report.orders_count) }} UZS
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mahsulot</th><th>Miqdor</th><th>Summa</th></tr></thead>
+      <tbody>
+        {% for name, row in report.product_sales.items() %}
+        <tr><td>{{ name }}</td><td>{{ row.quantity|qty }}</td><td>{{ "%.0f"|format(row.amount) }}</td></tr>
         {% else %}
-          0 UZS
-        {% endif %}
-      </b>
-    </div>
-    <div>
-      <p style="margin: 0; color: var(--muted); font-size: 14px;">Foydalilik koeffisiyenti</p>
-      <b style="font-size: 20px;">
-        {% if report.revenue > 0 %}
-          {{ "%.1f"|format(report.profit / report.revenue * 100) }}%
-        {% else %}
-          0%
-        {% endif %}
-      </b>
-    </div>
+        <tr><td colspan="3">Sotuv yo'q.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 {% endblock %}

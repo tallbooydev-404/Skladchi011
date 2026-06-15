@@ -1,20 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<style>
-  .product-panel { position: relative; }
-  .edit-form { display: none; background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
-  .edit-form.active { display: grid; gap: 8px; }
-  .cost-breakdown { background: #f0f8f0; padding: 12px; border-left: 4px solid var(--primary); border-radius: 4px; margin: 12px 0; font-size: 14px; }
-  .cost-row { display: grid; grid-template-columns: 1fr 120px; gap: 8px; margin: 4px 0; }
-  .labor-items { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 8px 0; }
-  .labor-item { display: grid; grid-template-columns: 1fr 80px 40px; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); align-items: center; }
-  .labor-item:last-child { border-bottom: none; }
-</style>
-
 <header class="top">
   <div>
     <h1>Tayyor mahsulotlar</h1>
-    <p>Assortiment va har bir mahsulot uchun xomashyo retsepti va ishbay xaraji.</p>
+    <p>Assortiment va har bir mahsulot uchun xomashyo retsepti.</p>
   </div>
 </header>
 
@@ -26,18 +15,14 @@
 </section>
 
 {% if role in ['admin','manager'] %}
-<button onclick="toggleAddForm()" style="margin-bottom: 16px;">✚ Yangi tayyor mahsulot qo'shish</button>
-
-<form class="panel stack" id="addForm" style="display: none;" method="post" action="{{ url_for('web_add_finished_product') }}">
+<form class="panel stack" method="post" action="{{ url_for('web_add_finished_product') }}">
   <h2>Yangi tayyor mahsulot</h2>
-  <div class="grid two">
+  <div class="grid five">
     <input name="name" placeholder="Nomi" required>
     <input name="article" placeholder="Artikul">
-  </div>
-  <div class="grid three">
     <input name="color" placeholder="Rang">
     <input name="size" placeholder="O'lcham">
-    <input name="sale_price" type="number" step="100" placeholder="Sotuv narxi" required>
+    <input name="sale_price" type="number" step="100" placeholder="Sotuv narxi">
   </div>
   <button>Qo'shish</button>
 </form>
@@ -46,117 +31,51 @@
 <div class="grid two">
   {% for product in products %}
   <section class="panel product-panel">
-    <div class="section-head" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+    <div class="section-head">
       <div>
-        <h2 style="margin-bottom: 0;">{{ product.name }}</h2>
-        <p style="margin: 4px 0; color: var(--muted); font-size: 14px;">
-          {% if product.article %}{{ product.article }}{% if product.color or product.size %} • {% endif %}{% endif %}
-          {% if product.color %}{{ product.color }}{% if product.size %} • {% endif %}{% endif %}
-          {% if product.size %}{{ product.size }}{% endif %}
-        </p>
+        <h2>{{ product.name }}</h2>
+        <p>{{ product.article or 'Artikulsiz' }} / {{ product.color or '-' }} / {{ product.size or '-' }}</p>
       </div>
-      <span style="background: var(--primary); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 14px; font-weight: bold;">
-        {{ "%.0f"|format(product.sale_price or 0) }} UZS
-      </span>
+      <span class="badge ready">{{ "%.0f"|format(product.sale_price or 0) }}</span>
     </div>
-
-    <!-- Cost Breakdown -->
-    <div class="cost-breakdown">
-      <div class="cost-row">
-        <span>Xomashyo xaraji:</span>
-        <b>{{ "%.0f"|format(product.cost or 0) }} UZS</b>
-      </div>
-      {% if product.labor_costs %}
-      <div class="cost-row">
-        <span>Ishbay xaraji:</span>
-        <b>{{ "%.0f"|format(product.labor_costs|sum(attribute='price')) }} UZS</b>
-      </div>
-      {% endif %}
-      <div class="cost-row" style="border-top: 1px solid rgba(0,0,0,0.1); padding-top: 8px; margin-top: 8px;">
-        <span><b>Jami tannarx:</b></span>
-        <b style="color: var(--primary);">{{ "%.0f"|format((product.cost or 0) + (product.labor_costs|sum(attribute='price') or 0)) }} UZS</b>
-      </div>
-      <div class="cost-row">
-        <span>Foyda (baholangan):</span>
-        <b style="color: #2d5016;">{{ "%.0f"|format((product.sale_price or 0) - (product.cost or 0) - (product.labor_costs|sum(attribute='price') or 0)) }} UZS</b>
-      </div>
+    <div class="metric-row">
+      <span>Tannarx: <b>{{ "%.0f"|format(product.cost or 0) }}</b></span>
+      <span>Foyda: <b>{{ "%.0f"|format((product.sale_price or 0) - (product.cost or 0)) }}</b></span>
     </div>
-
-    <!-- BOM Table -->
-    <div style="margin-bottom: 12px;">
-      <h3 style="margin: 8px 0;">Xomashyo retsepti</h3>
-      {% if product.bom %}
-      <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--line);">
-            <th style="text-align: left; padding: 8px;">Mahsulot</th>
-            <th style="text-align: right; padding: 8px;">Miqdor</th>
-            {% if role in ['admin','manager'] %}<th style="padding: 8px;"></th>{% endif %}
-          </tr>
-        </thead>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Xomashyo</th><th>Miqdor</th><th></th></tr></thead>
         <tbody>
           {% for item in product.bom %}
-          <tr style="border-bottom: 1px solid var(--line);">
-            <td style="padding: 8px;">{{ item.material_name }}</td>
-            <td style="text-align: right; padding: 8px;">{{ item.quantity|qty }} {{ item.unit }}</td>
-            {% if role in ['admin','manager'] %}
-            <td style="padding: 8px; text-align: center;">
-              <form method="post" action="{{ url_for('web_delete_bom_item', item_id=item._id) }}" style="display: inline;">
-                <button type="submit" class="ghost" style="padding: 4px 8px; font-size: 12px; min-height: 28px;">O'ch</button>
-              </form>
+          <tr>
+            <td>{{ item.material_name }}</td>
+            <td>{{ item.quantity|qty }} {{ item.unit }}</td>
+            <td>
+              {% if role in ['admin','manager'] %}
+              <form method="post" action="{{ url_for('web_delete_bom_item', item_id=item._id) }}"><button class="ghost">O'chirish</button></form>
+              {% endif %}
             </td>
-            {% endif %}
           </tr>
+          {% else %}
+          <tr><td colspan="3">Retsept kiritilmagan.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-      {% else %}
-      <p style="color: var(--muted); font-size: 14px;">Retsept kiritilmagan</p>
-      {% endif %}
     </div>
-
-    <!-- Labor Costs -->
-    {% if product.labor_costs %}
-    <div style="margin-bottom: 12px;">
-      <h3 style="margin: 8px 0;">Ishbay xaraji</h3>
-      <div class="labor-items">
-        {% for labor in product.labor_costs %}
-        <div class="labor-item">
-          <span>{{ labor.job_name }}</span>
-          <span>{{ labor.price|int }} UZS</span>
-          <span>x{{ labor.quantity|int }}</span>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Management Forms -->
     {% if role in ['admin','manager'] %}
-    <div style="display: grid; gap: 8px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px;">
-      <!-- Add BOM Item -->
-      <form class="inline compact" method="post" action="{{ url_for('web_add_bom_item', product_id=product._id) }}">
-        <select name="material_id" required>
-          <option value="">-- Xomashyo qo'shish --</option>
-          {% for material in materials %}
-          <option value="{{ material._id }}">{{ material.name }} ({{ material.unit }})</option>
-          {% endfor %}
-        </select>
-        <input name="quantity" type="number" min="0.001" step="0.001" placeholder="Miqdor" required>
-        <button style="font-size: 12px; padding: 6px 10px;">Qo'sh</button>
-      </form>
-    </div>
+    <form class="inline compact" method="post" action="{{ url_for('web_add_bom_item', product_id=product._id) }}">
+      <select name="material_id">
+        {% for material in materials %}
+        <option value="{{ material._id }}">{{ material.name }} ({{ material.unit }})</option>
+        {% endfor %}
+      </select>
+      <input name="quantity" type="number" min="0.001" step="0.001" placeholder="1 dona uchun">
+      <button>Retseptga qo'shish</button>
+    </form>
     {% endif %}
   </section>
   {% else %}
-  <section class="panel"><p style="color: var(--muted); text-align: center; padding: 20px;">Tayyor mahsulot yo'q</p></section>
+  <section class="panel"><p>Tayyor mahsulot yo'q.</p></section>
   {% endfor %}
 </div>
-
-<script>
-  function toggleAddForm() {
-    const form = document.getElementById('addForm');
-    form.style.display = form.style.display === 'none' ? 'grid' : 'none';
-  }
-</script>
 {% endblock %}
